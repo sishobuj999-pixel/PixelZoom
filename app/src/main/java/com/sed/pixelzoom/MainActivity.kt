@@ -32,6 +32,11 @@ class MainActivity : ComponentActivity() {
     private var imageName = "No image selected"
     private var bitmap: Bitmap? = null
     private var mode = "IMAGE"
+    private var byteOffset = 0
+    private val pageSize = 4096
+    private lateinit var pageLabel: TextView
+    private lateinit var previousPage: Button
+    private lateinit var nextPage: Button
     private val repoApi = "https://api.github.com/repos/sishobuj999-pixel/PixelZoom/releases/latest"
     private val pickImage = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) loadImage(uri)
@@ -77,28 +82,77 @@ class MainActivity : ComponentActivity() {
             text = "Binary / HEX / ASCII data preview"
             isVerticalScrollBarEnabled = true
         }
+        val pageControls = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        previousPage = action("Previous") { changePage(-1) }
+        pageLabel = label("Page 0 / 0")
+        nextPage = action("Next") { changePage(1) }
+        pageControls.addView(previousPage)
+        pageControls.addView(pageLabel, LinearParams(0, -2, 1f))
+        pageControls.addView(nextPage)
+        root.addView(pageControls)
         val scroll = ScrollView(this).apply { addView(data) }
         root.addView(scroll, LinearParams(-1, dp(150)))
         val copy = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        copy.addView(action("Copy preview") { copyText(data.text.toString()) }, LinearParams(0, -2, 1f))
-        copy.addView(action("Copy file bytes") { copyFileBytes() }, LinearParams(0, -2, 1f))
+        copy.addView(action("Copy visible page") { copyText(data.text.toString()) }, LinearParams(0, -2, 1f))
+        copy.addView(action("Copy page bytes") { copyPageBytes() }, LinearParams(0, -2, 1f))
         root.addView(copy)
         setContentView(root)
     }
 
     private fun setMode(next: String) {
         mode = next
+        byteOffset = 0
         val bytes = imageBytes
         if (bytes == null) { status.text = "Select an image first"; return }
         viewer.visibility = if (next == "IMAGE") View.VISIBLE else View.GONE
         info.visibility = if (next == "IMAGE") View.VISIBLE else View.GONE
-        data.text = when (next) {
-            "BINARY" -> bytes.take(2048).joinToString(" ") { it.toInt().and(255).toString(2).padStart(8, '0') }
-            "HEX" -> bytes.take(8192).mapIndexed { i, b -> if (i % 16 == 0) "\\n%08X  ".format(i) + "%02X".format(b.toInt() and 255) else "%02X".format(b.toInt() and 255) }.joinToString(" ")
-            "ASCII" -> bytes.take(8192).map { b -> val n = b.toInt() and 255; if (n in 32..126) n.toChar() else '.' }.joinToString("")
-            else -> "Image loaded: $imageName"
+        data.visibility = if (next == "IMAGE") View.GONE else View.VISIBLE
+        pageLabel.visibility = if (next == "IMAGE") View.GONE else View.VISIBLE
+        previousPage.visibility = if (next == "IMAGE") View.GONE else View.VISIBLE
+        nextPage.visibility = if (next == "IMAGE") View.GONE else View.VISIBLE
+        if (next == "IMAGE") {
+            data.text = "Image loaded: $imageName"
+            status.text = "$imageName • \${bitmap?.width} × \${bitmap?.height} • \${bytes.size} bytes"
+        } else {
+            renderDataPage()
         }
-        status.text = "$next view • ${bytes.size} bytes • preview is limited for performance"
+    }
+
+    private fun changePage(direction: Int) {
+        val bytes = imageBytes ?: return
+        val lastOffset = ((bytes.size - 1).coerceAtLeast(0) / pageSize) * pageSize
+        byteOffset = (byteOffset + direction * pageSize).coerceIn(0, lastOffset)
+        renderDataPage()
+    }
+
+    private fun renderDataPage() {
+        val bytes = imageBytes ?: return
+        val end = min(byteOffset + pageSize, bytes.size)
+        val page = bytes.copyOfRange(byteOffset, end)
+        data.text = when (mode) {
+            "BINARY" -> page.mapIndexed { i, b ->
+                (if (i % 16 == 0) "\n%08X  ".format(byteOffset + i) else "") +
+                    b.toInt().and(255).toString(2).padStart(8, '0')
+            }.joinToString(" ")
+            "HEX" -> page.mapIndexed { i, b ->
+                (if (i % 16 == 0) "\n%08X  ".format(byteOffset + i) else "") +
+                    "%02X".format(b.toInt() and 255)
+            }.joinToString(" ")
+            "ASCII" -> page.mapIndexed { i, b ->
+                (if (i % 64 == 0) "\n%08X  ".format(byteOffset + i) else "") +
+                    (b.toInt().and(255).let { if (it in 32..126) it.toChar() else '.' })
+            }.joinToString("")
+            else -> ""
+        }
+        val pageNumber = byteOffset / pageSize + 1
+        val totalPages = ((bytes.size + pageSize - 1) / pageSize).coerceAtLeast(1)
+        pageLabel.text = "Page $pageNumber / $totalPages • bytes $byteOffset–\${(end - 1).coerceAtLeast(byteOffset)}"
+        previousPage.isEnabled = byteOffset > 0
+        nextPage.isEnabled = end < bytes.size
+        status.text = "$mode • full file: \${bytes.size} bytes • showing $byteOffset–\${end - 1}"
     }
 
     private fun loadImage(uri: Uri) {
@@ -132,10 +186,11 @@ class MainActivity : ComponentActivity() {
         (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("PixelZoom data", s))
         status.text = "Copied to clipboard"
     }
-    private fun copyFileBytes() {
+    private fun copyPageBytes() {
         val bytes = imageBytes ?: run { status.text = "No file loaded"; return }
-        if (bytes.size > 1_000_000) { status.text = "File is larger than 1 MB. Use Copy preview or inspect a smaller image."; return }
-        copyText(bytes.joinToString("") { "%02X".format(it.toInt() and 255) })
+        val end = min(byteOffset + pageSize, bytes.size)
+        val page = bytes.copyOfRange(byteOffset, end)
+        copyText(page.joinToString("") { "%02X".format(it.toInt() and 255) })
     }
 
     private fun checkUpdate(silent: Boolean) {
