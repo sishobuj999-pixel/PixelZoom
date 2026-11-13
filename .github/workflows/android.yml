@@ -18,7 +18,12 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK components
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
       - name: Build debug APK
         run: gradle assembleDebug
       - name: Upload APK artifact
