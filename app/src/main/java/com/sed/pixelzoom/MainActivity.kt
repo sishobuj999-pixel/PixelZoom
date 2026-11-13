@@ -1,6 +1,7 @@
 package com.sed.pixelzoom
 
 import androidx.activity.ComponentActivity
+import android.app.AlertDialog
 import android.app.DownloadManager
 import android.content.*
 import android.graphics.*
