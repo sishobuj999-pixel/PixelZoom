@@ -1,6 +1,6 @@
 package com.sed.pixelzoom
 
-import android.app.Activity
+import androidx.activity.ComponentActivity
 import android.app.DownloadManager
 import android.content.*
 import android.graphics.*
@@ -11,6 +11,7 @@ import android.provider.OpenableColumns
 import android.view.*
 import android.widget.*
 import androidx.core.content.FileProvider
+import androidx.core.content.ContextCompat
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
@@ -20,7 +21,7 @@ import kotlin.concurrent.thread
 import kotlin.math.max
 import kotlin.math.min
 
-class MainActivity : Activity() {
+class MainActivity : ComponentActivity() {
     private lateinit var root: LinearLayout
     private lateinit var viewer: PixelCanvas
     private lateinit var info: TextView
@@ -144,6 +145,7 @@ class MainActivity : Activity() {
                 c.setRequestProperty("Accept", "application/vnd.github+json")
                 c.setRequestProperty("User-Agent", "PixelZoom-Android")
                 c.connectTimeout = 10000; c.readTimeout = 10000
+                if (c.responseCode == 404) { c.disconnect(); runOnUiThread { status.text = "No GitHub Release published yet" }; return@thread }
                 val json = JSONObject(c.inputStream.bufferedReader().use { it.readText() }); c.disconnect()
                 val tag = json.optString("tag_name", "")
                 val assets = json.optJSONArray("assets")
@@ -153,7 +155,7 @@ class MainActivity : Activity() {
                     if (asset.optString("name").endsWith(".apk", true)) { apkUrl = asset.optString("browser_download_url"); break }
                 }
                 runOnUiThread {
-                    if (apkUrl != null && tag.isNotBlank() && tag != "v1.0.0") {
+                    if (apkUrl != null && tag.isNotBlank() && tag.removePrefix("v") != BuildConfig.VERSION_NAME) {
                         status.text = "Update available: $tag"
                         AlertDialog.Builder(this).setTitle("PixelZoom update available")
                             .setMessage("$tag\n\n${json.optString("body", "A new version is ready.")}")
@@ -188,7 +190,7 @@ class MainActivity : Activity() {
                     unregisterReceiver(this)
                 }
             }
-            registerReceiver(receiver, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE), Context.RECEIVER_NOT_EXPORTED)
+            ContextCompat.registerReceiver(this, receiver, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE), ContextCompat.RECEIVER_NOT_EXPORTED)
             status.text = "Update download started • check notification for progress"
         } catch (e: Exception) { status.text = "Download failed: ${e.message}" }
     }
