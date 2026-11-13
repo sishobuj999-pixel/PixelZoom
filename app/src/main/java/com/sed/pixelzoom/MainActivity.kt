@@ -115,7 +115,7 @@ class MainActivity : ComponentActivity() {
         nextPage.visibility = if (next == "IMAGE") View.GONE else View.VISIBLE
         if (next == "IMAGE") {
             data.text = "Image loaded: $imageName"
-            status.text = "$imageName • \${bitmap?.width} × \${bitmap?.height} • \${bytes.size} bytes"
+            status.text = "$imageName • ${bitmap?.width} × ${bitmap?.height} • ${bytes.size} bytes"
         } else {
             renderDataPage()
         }
@@ -149,10 +149,10 @@ class MainActivity : ComponentActivity() {
         }
         val pageNumber = byteOffset / pageSize + 1
         val totalPages = ((bytes.size + pageSize - 1) / pageSize).coerceAtLeast(1)
-        pageLabel.text = "Page $pageNumber / $totalPages • bytes $byteOffset–\${(end - 1).coerceAtLeast(byteOffset)}"
+        pageLabel.text = "Page $pageNumber / $totalPages • bytes $byteOffset–${(end - 1).coerceAtLeast(byteOffset)}"
         previousPage.isEnabled = byteOffset > 0
         nextPage.isEnabled = end < bytes.size
-        status.text = "$mode • full file: \${bytes.size} bytes • showing $byteOffset–\${end - 1}"
+        status.text = "$mode • full file: ${bytes.size} bytes • showing $byteOffset–${end - 1}"
     }
 
     private fun loadImage(uri: Uri) {
