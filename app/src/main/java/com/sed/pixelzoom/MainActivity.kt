@@ -355,7 +355,6 @@ class MainActivity : ComponentActivity() {
         private var bmp: Bitmap? = null
         private val matrix = Matrix()
         private val paint = Paint().apply { isFilterBitmap = false; isAntiAlias = false; isDither = false }
-        private val gridPaint = Paint().apply { color = 0x998F72D8.toInt(); strokeWidth = 1f }
         private val markerPaint = Paint().apply { color = Color.YELLOW; style = Paint.Style.STROKE; strokeWidth = 2f }
         private var scale = 1f
         private var lastX = 0f; private var lastY = 0f
@@ -387,17 +386,6 @@ class MainActivity : ComponentActivity() {
             canvas.drawColor(Color.rgb(14, 18, 28))
             val b = bmp ?: return
             canvas.drawBitmap(b, matrix, paint)
-            if (scale >= 8f) {
-                val inv = Matrix(); if (matrix.invert(inv)) {
-                    val pts = floatArrayOf(0f, 0f, width.toFloat(), height.toFloat()); inv.mapPoints(pts)
-                    val left = max(0, pts[0].toInt()); val top = max(0, pts[1].toInt())
-                    val right = min(b.width, pts[2].toInt() + 2); val bottom = min(b.height, pts[3].toInt() + 2)
-                    if ((right - left) * (bottom - top) < 20000) {
-                        for (x in left..right) { val p = floatArrayOf(x.toFloat(), top.toFloat(), x.toFloat(), bottom.toFloat()); matrix.mapPoints(p); canvas.drawLine(p[0], p[1], p[2], p[3], gridPaint) }
-                        for (y in top..bottom) { val p = floatArrayOf(left.toFloat(), y.toFloat(), right.toFloat(), y.toFloat()); matrix.mapPoints(p); canvas.drawLine(p[0], p[1], p[2], p[3], gridPaint) }
-                    }
-                }
-            }
             if (selectedX >= 0) {
                 val p = floatArrayOf(selectedX.toFloat(), selectedY.toFloat(), (selectedX + 1).toFloat(), (selectedY + 1).toFloat())
                 matrix.mapPoints(p); canvas.drawRect(p[0], p[1], p[2], p[3], markerPaint)
