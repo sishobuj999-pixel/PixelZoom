@@ -4,11 +4,14 @@ import androidx.activity.ComponentActivity
 import android.app.AlertDialog
 import android.app.DownloadManager
 import android.content.*
+import android.content.ContentValues
 import android.graphics.*
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.provider.OpenableColumns
+import android.provider.MediaStore
+import android.os.Build
 import android.view.*
 import android.widget.*
 import androidx.core.content.FileProvider
@@ -65,6 +68,10 @@ class MainActivity : ComponentActivity() {
         actions.addView(action("Open image") { pickImage.launch("image/*") }, LinearParams(0, -2, 1f))
         actions.addView(action("Reset zoom") { viewer.resetZoom() }, LinearParams(0, -2, 1f))
         root.addView(actions)
+        val editActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        editActions.addView(action("Edit selected pixel") { editSelectedPixel() }, LinearParams(0, -2, 1f))
+        editActions.addView(action("Save PNG") { saveEditedImage() }, LinearParams(0, -2, 1f))
+        root.addView(editActions)
         val tabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         listOf("IMAGE", "BINARY", "HEX", "ASCII").forEach { tab ->
             tabs.addView(action(tab) { setMode(tab) }, LinearParams(0, -2, 1f))
@@ -158,7 +165,8 @@ class MainActivity : ComponentActivity() {
     private fun loadImage(uri: Uri) {
         try {
             val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: error("Cannot read image")
-            val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: error("Unsupported image")
+            val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: error("Unsupported image")
+            val bmp = decoded.copy(Bitmap.Config.ARGB_8888, true) ?: error("Could not create editable bitmap")
             imageBytes = bytes; bitmap = bmp
             imageName = queryName(uri)
             viewer.setBitmap(bmp)
@@ -179,6 +187,58 @@ class MainActivity : ComponentActivity() {
         val r = Color.red(color); val g = Color.green(color); val b = Color.blue(color); val a = Color.alpha(color)
         val hex = "#%02X%02X%02X".format(r, g, b)
         info.text = "X: $x   Y: $y   •   RGBA: $r, $g, $b, $a\nHEX: $hex\nR: ${bin(r)}  G: ${bin(g)}  B: ${bin(b)}"
+    }
+
+    private fun editSelectedPixel() {
+        val b = bitmap ?: run { status.text = "Open an image first"; return }
+        val point = viewer.selectedPixel() ?: run { status.text = "Tap a pixel first"; return }
+        val current = b.getPixel(point.first, point.second)
+        val input = EditText(this).apply {
+            setSingleLine(true)
+            hint = "#RRGGBB"
+            setText("#%02X%02X%02X".format(Color.red(current), Color.green(current), Color.blue(current)))
+        }
+        AlertDialog.Builder(this).setTitle("Edit pixel (${point.first}, ${point.second})")
+            .setMessage("Enter a HEX color. The actual source pixel will be changed.")
+            .setView(input).setNegativeButton("Cancel", null)
+            .setPositiveButton("Apply") { _, _ ->
+                try {
+                    val value = input.text.toString().trim().removePrefix("#")
+                    require(value.matches(Regex("[0-9a-fA-F]{6}([0-9a-fA-F]{2})?")))
+                    val color = Color.parseColor("#$value")
+                    b.setPixel(point.first, point.second, color)
+                    viewer.invalidate()
+                    showPixel(point.first, point.second, color)
+                    status.text = "Pixel updated in memory • save PNG to keep changes"
+                } catch (_: Exception) { status.text = "Invalid HEX color. Use #RRGGBB or #AARRGGBB." }
+            }.show()
+    }
+
+    private fun saveEditedImage() {
+        val b = bitmap ?: run { status.text = "Open an image first"; return }
+        thread {
+            try {
+                val name = "PixelZoom-${System.currentTimeMillis()}.png"
+                val values = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, name)
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                    if (Build.VERSION.SDK_INT >= 29) put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/PixelZoom")
+                }
+                val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                    ?: error("Could not create output image")
+                try {
+                    contentResolver.openOutputStream(uri)?.use { out ->
+                        if (!b.compress(Bitmap.CompressFormat.PNG, 100, out)) error("PNG encoding failed")
+                    } ?: error("Could not open output stream")
+                } catch (e: Exception) {
+                    contentResolver.delete(uri, null, null)
+                    throw e
+                }
+                runOnUiThread { status.text = "Saved full-resolution PNG: $name" }
+            } catch (e: Exception) {
+                runOnUiThread { status.text = "Save failed: ${e.message}" }
+            }
+        }
     }
 
     private fun bin(v: Int) = v.toString(2).padStart(8, '0')
@@ -265,11 +325,13 @@ class MainActivity : ComponentActivity() {
     class PixelCanvas(context: Context, val onPixel: (Int, Int, Int) -> Unit) : View(context) {
         private var bmp: Bitmap? = null
         private val matrix = Matrix()
-        private val paint = Paint(Paint.FILTER_BITMAP_FLAG)
+        private val paint = Paint().apply { isFilterBitmap = false; isAntiAlias = false; isDither = false }
         private val gridPaint = Paint().apply { color = 0x668B9CFF; strokeWidth = 1f }
         private val markerPaint = Paint().apply { color = Color.YELLOW; style = Paint.Style.STROKE; strokeWidth = 2f }
         private var scale = 1f
         private var lastX = 0f; private var lastY = 0f
+        private var downX = 0f; private var downY = 0f
+        private var dragged = false
         private var selectedX = -1; private var selectedY = -1
         private val detector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(d: ScaleGestureDetector): Boolean {
@@ -288,6 +350,8 @@ class MainActivity : ComponentActivity() {
             invalidate()
         }
         fun resetZoom() { bmp?.let { setBitmap(it) } }
+        fun selectedPixel(): Pair<Int, Int>? =
+            if (selectedX >= 0 && selectedY >= 0) Pair(selectedX, selectedY) else null
         override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) { bmp?.let { setBitmap(it) } }
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
@@ -313,12 +377,13 @@ class MainActivity : ComponentActivity() {
         override fun onTouchEvent(event: MotionEvent): Boolean {
             detector.onTouchEvent(event)
             when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { lastX = event.x; lastY = event.y; return true }
+                MotionEvent.ACTION_DOWN -> { lastX = event.x; lastY = event.y; downX = event.x; downY = event.y; dragged = false; return true }
                 MotionEvent.ACTION_MOVE -> if (!detector.isInProgress && event.pointerCount == 1) {
+                    if (kotlin.math.abs(event.x - downX) > 6f || kotlin.math.abs(event.y - downY) > 6f) dragged = true
                     matrix.postTranslate(event.x - lastX, event.y - lastY); lastX = event.x; lastY = event.y; invalidate()
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (event.eventTime - event.downTime < 250 && kotlin.math.abs(event.x - lastX) < 4f) {
+                    if (!dragged && event.eventTime - event.downTime < 500) {
                         val inv = Matrix(); if (matrix.invert(inv)) {
                             val p = floatArrayOf(event.x, event.y); inv.mapPoints(p)
                             val b = bmp
