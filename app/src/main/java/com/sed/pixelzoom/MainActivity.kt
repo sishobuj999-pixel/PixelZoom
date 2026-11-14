@@ -147,7 +147,7 @@ class MainActivity : ComponentActivity() {
                 else -> "image/jpeg"
             }
             val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
-            data.text = "<!doctype html>\\n<html>\\n<head><meta charset=\\"utf-8\\"><meta name=\\"viewport\\" content=\\"width=device-width,initial-scale=1\\"><title>$imageName</title></head>\\n<body style=\\"margin:0;background:#111;color:white;display:grid;place-items:center;min-height:100vh\\">\\n<img alt=\\"$imageName\\" style=\\"max-width:100%;height:auto\\" src=\\"data:$mime;base64,$encoded\\">\\n</body></html>"
+            data.text = "<!doctype html>\n<html>\n<head><meta charset=\\"utf-8\\"><meta name=\\"viewport\\" content=\\"width=device-width,initial-scale=1\\"><title>$imageName</title></head>\n<body style=\\"margin:0;background:#111;color:white;display:grid;place-items:center;min-height:100vh\\">\n<img alt=\\"$imageName\\" style=\\"max-width:100%;height:auto\\" src=\\"data:$mime;base64,$encoded\\">\n</body></html>"
             pageLabel.visibility = View.GONE
             previousPage.visibility = View.GONE
             nextPage.visibility = View.GONE
@@ -157,15 +157,15 @@ class MainActivity : ComponentActivity() {
         val out = StringBuilder()
         when (mode) {
             "BINARY" -> bytes.forEachIndexed { i, b ->
-                if (i % 16 == 0) out.append("\\n%08X  ".format(i))
+                if (i % 16 == 0) out.append("\n%08X  ".format(i))
                 out.append((b.toInt() and 255).toString(2).padStart(8, '0')).append(' ')
             }
             "HEX" -> bytes.forEachIndexed { i, b ->
-                if (i % 16 == 0) out.append("\\n%08X  ".format(i))
+                if (i % 16 == 0) out.append("\n%08X  ".format(i))
                 out.append("%02X ".format(b.toInt() and 255))
             }
             "ASCII" -> bytes.forEachIndexed { i, b ->
-                if (i % 64 == 0) out.append("\\n%08X  ".format(i))
+                if (i % 64 == 0) out.append("\n%08X  ".format(i))
                 val v = b.toInt() and 255
                 out.append(if (v in 32..126) v.toChar() else '.')
             }
