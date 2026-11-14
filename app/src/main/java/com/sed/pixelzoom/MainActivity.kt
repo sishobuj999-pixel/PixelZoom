@@ -12,6 +12,8 @@ import android.os.Environment
 import android.provider.OpenableColumns
 import android.provider.MediaStore
 import android.os.Build
+import android.util.Base64
+import android.graphics.drawable.GradientDrawable
 import android.view.*
 import android.widget.*
 import androidx.core.content.FileProvider
@@ -55,10 +57,10 @@ class MainActivity : ComponentActivity() {
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(14), dp(16), dp(12))
-            setBackgroundColor(Color.rgb(9, 11, 18))
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(Color.rgb(22, 13, 42), Color.rgb(9, 12, 25), Color.rgb(30, 14, 55)))
         }
         val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val title = TextView(this).apply { text = "PIXELZOOM"; textSize = 22f; setTextColor(Color.WHITE); typeface = Typeface.DEFAULT_BOLD }
+        val title = TextView(this).apply { text = "PIXELZOOM"; textSize = 22f; setTextColor(Color.WHITE); typeface = Typeface.DEFAULT_BOLD; setShadowLayer(12f, 0f, 0f, Color.rgb(190, 130, 255)) }
         val update = Button(this).apply { text = "Check update"; setOnClickListener { checkUpdate(false) } }
         header.addView(title, LinearParams(0, -2, 1f)); header.addView(update)
         root.addView(header)
@@ -73,10 +75,10 @@ class MainActivity : ComponentActivity() {
         editActions.addView(action("Save PNG") { saveEditedImage() }, LinearParams(0, -2, 1f))
         root.addView(editActions)
         val tabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        listOf("IMAGE", "BINARY", "HEX", "ASCII").forEach { tab ->
+        listOf("IMAGE", "BINARY", "HEX", "ASCII", "HTML").forEach { tab ->
             tabs.addView(action(tab) { setMode(tab) }, LinearParams(0, -2, 1f))
         }
-        root.addView(tabs)
+        root.addView(ScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(tabs) })
         viewer = PixelCanvas(this) { x, y, color -> showPixel(x, y, color) }
         root.addView(viewer, LinearParams(-1, 0, 1f))
         info = label("Pixel information will appear here")
@@ -85,7 +87,7 @@ class MainActivity : ComponentActivity() {
             setTextColor(Color.rgb(190, 202, 224)); textSize = 11f
             typeface = Typeface.MONOSPACE
             setPadding(dp(10), dp(8), dp(10), dp(8))
-            setBackgroundColor(Color.rgb(17, 21, 32))
+            background = glassBackground()
             text = "Binary / HEX / ASCII data preview"
             isVerticalScrollBarEnabled = true
         }
@@ -103,8 +105,8 @@ class MainActivity : ComponentActivity() {
         val scroll = ScrollView(this).apply { addView(data) }
         root.addView(scroll, LinearParams(-1, dp(150)))
         val copy = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        copy.addView(action("Copy visible page") { copyText(data.text.toString()) }, LinearParams(0, -2, 1f))
-        copy.addView(action("Copy page bytes") { copyPageBytes() }, LinearParams(0, -2, 1f))
+        copy.addView(action("Copy ALL data") { copyText(data.text.toString()) }, LinearParams(0, -2, 1f))
+        copy.addView(action("Copy original HEX") { copyAllHex() }, LinearParams(0, -2, 1f))
         root.addView(copy)
         setContentView(root)
     }
@@ -117,9 +119,9 @@ class MainActivity : ComponentActivity() {
         viewer.visibility = if (next == "IMAGE") View.VISIBLE else View.GONE
         info.visibility = if (next == "IMAGE") View.VISIBLE else View.GONE
         data.visibility = if (next == "IMAGE") View.GONE else View.VISIBLE
-        pageLabel.visibility = if (next == "IMAGE") View.GONE else View.VISIBLE
-        previousPage.visibility = if (next == "IMAGE") View.GONE else View.VISIBLE
-        nextPage.visibility = if (next == "IMAGE") View.GONE else View.VISIBLE
+        pageLabel.visibility = if (next in listOf("IMAGE", "HTML")) View.GONE else View.VISIBLE
+        previousPage.visibility = if (next in listOf("IMAGE", "HTML")) View.GONE else View.VISIBLE
+        nextPage.visibility = if (next in listOf("IMAGE", "HTML")) View.GONE else View.VISIBLE
         if (next == "IMAGE") {
             data.text = "Image loaded: $imageName"
             status.text = "$imageName • ${bitmap?.width} × ${bitmap?.height} • ${bytes.size} bytes"
@@ -137,29 +139,42 @@ class MainActivity : ComponentActivity() {
 
     private fun renderDataPage() {
         val bytes = imageBytes ?: return
-        val end = min(byteOffset + pageSize, bytes.size)
-        val page = bytes.copyOfRange(byteOffset, end)
-        data.text = when (mode) {
-            "BINARY" -> page.mapIndexed { i, b ->
-                (if (i % 16 == 0) "\n%08X  ".format(byteOffset + i) else "") +
-                    b.toInt().and(255).toString(2).padStart(8, '0')
-            }.joinToString(" ")
-            "HEX" -> page.mapIndexed { i, b ->
-                (if (i % 16 == 0) "\n%08X  ".format(byteOffset + i) else "") +
-                    "%02X".format(b.toInt() and 255)
-            }.joinToString(" ")
-            "ASCII" -> page.mapIndexed { i, b ->
-                (if (i % 64 == 0) "\n%08X  ".format(byteOffset + i) else "") +
-                    (b.toInt().and(255).let { if (it in 32..126) it.toChar() else '.' })
-            }.joinToString("")
-            else -> ""
+        if (mode == "HTML") {
+            val mime = when {
+                imageName.endsWith(".png", true) -> "image/png"
+                imageName.endsWith(".webp", true) -> "image/webp"
+                imageName.endsWith(".gif", true) -> "image/gif"
+                else -> "image/jpeg"
+            }
+            val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
+            data.text = "<!doctype html>\\n<html>\\n<head><meta charset=\\"utf-8\\"><meta name=\\"viewport\\" content=\\"width=device-width,initial-scale=1\\"><title>$imageName</title></head>\\n<body style=\\"margin:0;background:#111;color:white;display:grid;place-items:center;min-height:100vh\\">\\n<img alt=\\"$imageName\\" style=\\"max-width:100%;height:auto\\" src=\\"data:$mime;base64,$encoded\\">\\n</body></html>"
+            pageLabel.visibility = View.GONE
+            previousPage.visibility = View.GONE
+            nextPage.visibility = View.GONE
+            status.text = "HTML representation • embedded image • ${bytes.size} source bytes"
+            return
         }
-        val pageNumber = byteOffset / pageSize + 1
-        val totalPages = ((bytes.size + pageSize - 1) / pageSize).coerceAtLeast(1)
-        pageLabel.text = "Page $pageNumber / $totalPages • bytes $byteOffset–${(end - 1).coerceAtLeast(byteOffset)}"
-        previousPage.isEnabled = byteOffset > 0
-        nextPage.isEnabled = end < bytes.size
-        status.text = "$mode • full file: ${bytes.size} bytes • showing $byteOffset–${end - 1}"
+        val out = StringBuilder()
+        when (mode) {
+            "BINARY" -> bytes.forEachIndexed { i, b ->
+                if (i % 16 == 0) out.append("\\n%08X  ".format(i))
+                out.append((b.toInt() and 255).toString(2).padStart(8, '0')).append(' ')
+            }
+            "HEX" -> bytes.forEachIndexed { i, b ->
+                if (i % 16 == 0) out.append("\\n%08X  ".format(i))
+                out.append("%02X ".format(b.toInt() and 255))
+            }
+            "ASCII" -> bytes.forEachIndexed { i, b ->
+                if (i % 64 == 0) out.append("\\n%08X  ".format(i))
+                val v = b.toInt() and 255
+                out.append(if (v in 32..126) v.toChar() else '.')
+            }
+        }
+        data.text = out.toString()
+        pageLabel.visibility = View.GONE
+        previousPage.visibility = View.GONE
+        nextPage.visibility = View.GONE
+        status.text = "$mode • complete file shown • ${bytes.size} bytes • all data on one page"
     }
 
     private fun loadImage(uri: Uri) {
@@ -246,11 +261,11 @@ class MainActivity : ComponentActivity() {
         (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("PixelZoom data", s))
         status.text = "Copied to clipboard"
     }
-    private fun copyPageBytes() {
+    private fun copyAllHex() {
         val bytes = imageBytes ?: run { status.text = "No file loaded"; return }
-        val end = min(byteOffset + pageSize, bytes.size)
-        val page = bytes.copyOfRange(byteOffset, end)
-        copyText(page.joinToString("") { "%02X".format(it.toInt() and 255) })
+        val out = StringBuilder(bytes.size * 2)
+        bytes.forEach { out.append("%02X".format(it.toInt() and 255)) }
+        copyText(out.toString())
     }
 
     private fun checkUpdate(silent: Boolean) {
@@ -315,8 +330,17 @@ class MainActivity : ComponentActivity() {
         text = s; textSize = 12f; setTextColor(Color.rgb(176, 190, 214))
         setPadding(dp(2), dp(8), dp(2), dp(8))
     }
+    private fun glassBackground(): GradientDrawable =
+        GradientDrawable(GradientDrawable.Orientation.TL_BR,
+            intArrayOf(0xCC30204F.toInt(), 0xAA171C35.toInt(), 0x993B2460.toInt())).apply {
+            cornerRadius = dp(16).toFloat()
+            setStroke(dp(1), 0x668F72C8)
+        }
     private fun action(s: String, click: () -> Unit) = Button(this).apply {
         text = s; textSize = 10f; isAllCaps = false
+        setTextColor(Color.WHITE)
+        background = glassBackground()
+        elevation = dp(3).toFloat()
         setOnClickListener { click() }
     }
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -326,7 +350,7 @@ class MainActivity : ComponentActivity() {
         private var bmp: Bitmap? = null
         private val matrix = Matrix()
         private val paint = Paint().apply { isFilterBitmap = false; isAntiAlias = false; isDither = false }
-        private val gridPaint = Paint().apply { color = 0x668B9CFF; strokeWidth = 1f }
+        private val gridPaint = Paint().apply { color = 0x998F72D8.toInt(); strokeWidth = 1f }
         private val markerPaint = Paint().apply { color = Color.YELLOW; style = Paint.Style.STROKE; strokeWidth = 2f }
         private var scale = 1f
         private var lastX = 0f; private var lastY = 0f
