@@ -78,7 +78,7 @@ class MainActivity : ComponentActivity() {
         listOf("IMAGE", "BINARY", "HEX", "ASCII", "HTML").forEach { tab ->
             tabs.addView(action(tab) { setMode(tab) }, LinearParams(0, -2, 1f))
         }
-        root.addView(ScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(tabs) })
+        root.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(tabs) })
         viewer = PixelCanvas(this) { x, y, color -> showPixel(x, y, color) }
         root.addView(viewer, LinearParams(-1, 0, 1f))
         info = label("Pixel information will appear here")
@@ -147,7 +147,12 @@ class MainActivity : ComponentActivity() {
                 else -> "image/jpeg"
             }
             val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
-            data.text = "<!doctype html>\n<html>\n<head><meta charset=\\"utf-8\\"><meta name=\\"viewport\\" content=\\"width=device-width,initial-scale=1\\"><title>$imageName</title></head>\n<body style=\\"margin:0;background:#111;color:white;display:grid;place-items:center;min-height:100vh\\">\n<img alt=\\"$imageName\\" style=\\"max-width:100%;height:auto\\" src=\\"data:$mime;base64,$encoded\\">\n</body></html>"
+            data.text = """<!doctype html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>$imageName</title></head>
+<body style="margin:0;background:#111;color:white;display:grid;place-items:center;min-height:100vh">
+<img alt="$imageName" style="max-width:100%;height:auto" src="data:$mime;base64,$encoded">
+</body></html>""".trimIndent()
             pageLabel.visibility = View.GONE
             previousPage.visibility = View.GONE
             nextPage.visibility = View.GONE
